@@ -1,0 +1,10 @@
+-----BEGIN PGP SIGNATURE-----
+Comment: This signature is for the .tar version of the archive
+Comment: git archive --format tar --prefix=b4-0.7.0/ v0.7.0
+Comment: git version 2.31.1
+
+iHUEABYIAB0WIQR2vl2yUnHhSB5njDW2xBzjVmSZbAUCYK6HdwAKCRC2xBzjVmSZ
+bGfRAP9HUJy+j/ZYKtVWdUPcfe/gbd+io3dEiP67C7pjj+kA7wD8CRDCccPbVhbe
+aR8YlJ9GLVFnClLpWAPjnP9RsVVk6w0=
+=KIrs
+-----END PGP SIGNATURE-----
