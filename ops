@@ -1,1 +1,1 @@
-{"author":{"id":"1e0a6ff3e01313072cf7b3803c158c22d01a37717237fe198e814e781752b172"},"ops":[{"type":5,"timestamp":1789478942,"nonce":"zVrnMPr0qMpRyMk25113m5AJbiU=","added":["rfe","b4/prep","b4/email"],"removed":null}]}
+{"author":{"id":"1e0a6ff3e01313072cf7b3803c158c22d01a37717237fe198e814e781752b172"},"ops":[{"type":2,"timestamp":1789478988,"nonce":"vwgafQ5BVPh+YgqPuPufKpS2hUc=","title":"b4: unify message-to-bytes serialization behind LoreMessage.get_msg_as_bytes()","was":"b4 has three different ways of turning an EmailMessage into bytes, and they"}]}
