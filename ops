@@ -1,1 +1,1 @@
-{"author":{"id":"1e0a6ff3e01313072cf7b3803c158c22d01a37717237fe198e814e781752b172"},"ops":[{"type":2,"timestamp":1789592383,"nonce":"kGcKjTaXCI8bLV9a+t/EIjKyLNk=","title":"b4 trailers: comma in From: name accepts any follow-up trailer","was":"b4 trailers: comma in From: name accepts any follow-up trailer"}]}
+{"author":{"id":"1e0a6ff3e01313072cf7b3803c158c22d01a37717237fe198e814e781752b172"},"ops":[{"type":5,"timestamp":1789592383,"nonce":"HkA0wvvbD4B28wRh13f0oIUEkNI=","added":["b4/trailers","lifecycle:confirmed"],"removed":null}]}
