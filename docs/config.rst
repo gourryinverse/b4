@@ -81,6 +81,27 @@ These options control many of the core features of b4.
 
      Default: ``10``
 
+   :term:`b4.cache-dir`
+     Where b4 keeps cached threads and lookups. Set it per repository to
+     keep the cache of one checkout apart from the rest. A leading ``~``
+     is your home directory, and a relative path is taken from the top
+     of the repository. A project's ``.b4-config`` cannot set it.
+
+     Default: ``$XDG_CACHE_HOME/b4``, or ``~/.cache/b4``
+
+     .. versionadded:: v0.17
+
+   :term:`b4.data-dir`
+     Where b4 keeps its data: review tracking databases, keyrings,
+     attestation records, and queued thank-yous. Set it per repository
+     to give one checkout review state of its own. Paths follow the same
+     rules as :term:`b4.cache-dir`, and a project's ``.b4-config`` cannot
+     set it.
+
+     Default: ``$XDG_DATA_HOME/b4``, or ``~/.local/share/b4``
+
+     .. versionadded:: v0.17
+
    :term:`b4.linkmask`
      B4 uses this setting to construct the URL in the ``Link:`` trailers.
      If you want a shorter option, you can also use

@@ -35,6 +35,8 @@ Run this once per checkout::
 
 This creates a SQLite tracking database in
 ``$XDG_DATA_HOME/b4/review/`` and metadata under ``.git/b4-review/``.
+To keep this checkout's review state apart from your other ones, set
+:term:`b4.data-dir` in its ``.git/config`` before enrolling.
 If you manage several subsystems from separate checkouts of the same
 repository, use ``-i`` to give each one a distinct identifier::
 

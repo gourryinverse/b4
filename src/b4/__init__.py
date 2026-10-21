@@ -337,6 +337,9 @@ DEFAULT_CONFIG: ConfigDictT = {
     'attestation-checkmarks': 'fancy',
     # How long to keep things in cache before expiring (minutes)?
     'cache-expire': '10',
+    # Where b4 keeps its data and cache, instead of the XDG directories
+    'data-dir': None,
+    'cache-dir': None,
     # Used when creating summaries for b4 ty
     'thanks-commit-url-mask': None,
     # Git URL of the public repo used to verify that queued thank-yous
@@ -4987,6 +4990,14 @@ def _val_to_path(topdir: str, val: str) -> str:
     return val
 
 
+def _dir_from_config(topdir: Optional[str], val: str) -> str:
+    # Relative paths follow the repository, so a workspace can move
+    path = os.path.expanduser(val)
+    if topdir is not None and not os.path.isabs(path):
+        path = os.path.join(topdir, path)
+    return os.path.abspath(path)
+
+
 def _setup_main_config(
     cmdargs: Optional[argparse.Namespace] = None, topdir: Optional[str] = None
 ) -> None:
@@ -5045,6 +5056,11 @@ def _setup_main_config(
     if cmdargs:
         _cmdline_config_override(cmdargs, config, 'b4')
 
+    for key in ('data-dir', 'cache-dir'):
+        val = config.get(key)
+        if isinstance(val, str) and val:
+            config[key] = _dir_from_config(topdir, val)
+
     _warn_deprecated_config(topdir)
 
     MAIN_CONFIG = config
@@ -5098,22 +5114,30 @@ def get_main_config() -> ConfigDictT:
 
 
 def get_data_dir(appname: str = 'b4') -> str:
-    if 'XDG_DATA_HOME' in os.environ:
-        datahome = os.environ['XDG_DATA_HOME']
+    configured = get_main_config().get('data-dir')
+    if isinstance(configured, str) and configured:
+        datadir = configured
+        if appname != 'b4':
+            datadir = os.path.join(datadir, appname)
+    elif 'XDG_DATA_HOME' in os.environ:
+        datadir = os.path.join(os.environ['XDG_DATA_HOME'], appname)
     else:
-        datahome = os.path.join(str(pathlib.Path.home()), '.local', 'share')
-    datadir = os.path.join(datahome, appname)
+        datadir = os.path.join(str(pathlib.Path.home()), '.local', 'share', appname)
     pathlib.Path(datadir).mkdir(parents=True, exist_ok=True)
     return datadir
 
 
 def get_cache_dir(appname: str = 'b4') -> str:
     global _CACHE_CLEANED
-    if 'XDG_CACHE_HOME' in os.environ:
-        cachehome = os.environ['XDG_CACHE_HOME']
+    configured = get_main_config().get('cache-dir')
+    if isinstance(configured, str) and configured:
+        cachedir = configured
+        if appname != 'b4':
+            cachedir = os.path.join(cachedir, appname)
+    elif 'XDG_CACHE_HOME' in os.environ:
+        cachedir = os.path.join(os.environ['XDG_CACHE_HOME'], appname)
     else:
-        cachehome = os.path.join(str(pathlib.Path.home()), '.cache')
-    cachedir = os.path.join(cachehome, appname)
+        cachedir = os.path.join(str(pathlib.Path.home()), '.cache', appname)
     pathlib.Path(cachedir).mkdir(parents=True, exist_ok=True)
     if _CACHE_CLEANED:
         return cachedir

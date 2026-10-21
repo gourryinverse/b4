@@ -2924,3 +2924,65 @@ class TestGetAmMessageFromLines:
         lines = payload.decode().splitlines()
         assert 'From the manual, bar() must be called here.' in lines
         assert '>From an old thread.' in lines
+
+
+class TestDataDirs:
+    """Tests for the b4.data-dir and b4.cache-dir settings."""
+
+    def test_unset_uses_xdg(self, gitdir: str, tmp_path: pathlib.Path) -> None:
+        """Without the settings, b4 keeps using the XDG directories."""
+        b4._setup_main_config(topdir=gitdir)
+        assert b4.get_data_dir() == str(tmp_path / 'b4')
+        assert b4.get_cache_dir() == str(tmp_path / 'b4')
+
+    def test_git_config_overrides_xdg(
+        self, gitdir: str, tmp_path: pathlib.Path
+    ) -> None:
+        """A per-repo setting wins over XDG_DATA_HOME and XDG_CACHE_HOME."""
+        datadir = tmp_path / 'ws' / 'data'
+        cachedir = tmp_path / 'ws' / 'cache'
+        b4.git_set_config(gitdir, 'b4.data-dir', str(datadir))
+        b4.git_set_config(gitdir, 'b4.cache-dir', str(cachedir))
+        b4._setup_main_config(topdir=gitdir)
+        assert b4.get_data_dir() == str(datadir)
+        assert b4.get_cache_dir() == str(cachedir)
+        assert datadir.is_dir()
+        assert cachedir.is_dir()
+
+    def test_other_app_is_a_subdirectory(
+        self, gitdir: str, tmp_path: pathlib.Path
+    ) -> None:
+        """Data b4 keeps under another app name stays inside b4.data-dir."""
+        datadir = tmp_path / 'ws' / 'data'
+        b4.git_set_config(gitdir, 'b4.data-dir', str(datadir))
+        b4._setup_main_config(topdir=gitdir)
+        assert b4.get_data_dir('patchwork') == str(datadir / 'patchwork')
+
+    def test_relative_path_resolves_against_toplevel(self, gitdir: str) -> None:
+        """A relative path follows the repository, not the current directory."""
+        b4.git_set_config(gitdir, 'b4.data-dir', '../var/data')
+        subdir = pathlib.Path(gitdir) / 'sub'
+        subdir.mkdir()
+        os.chdir(subdir)
+        b4._setup_main_config(topdir=gitdir)
+        expected = pathlib.Path(gitdir).parent / 'var' / 'data'
+        assert b4.get_data_dir() == str(expected)
+
+    def test_tilde_expands(
+        self, gitdir: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A leading ~ means the home directory, as it does for git paths."""
+        monkeypatch.setenv('HOME', str(tmp_path / 'home'))
+        b4.git_set_config(gitdir, 'b4.cache-dir', '~/b4-cache')
+        b4._setup_main_config(topdir=gitdir)
+        assert b4.get_cache_dir() == str(tmp_path / 'home' / 'b4-cache')
+
+    def test_ignored_in_worktree_config(
+        self, gitdir: str, tmp_path: pathlib.Path
+    ) -> None:
+        """A repository's .b4-config cannot redirect where b4 keeps its data."""
+        wtcfg = pathlib.Path(gitdir) / '.b4-config'
+        wtcfg.write_text('[b4]\n\tdata-dir = ./elsewhere\n\tcache-dir = ./elsewhere\n')
+        b4._setup_main_config(topdir=gitdir)
+        assert b4.get_data_dir() == str(tmp_path / 'b4')
+        assert b4.get_cache_dir() == str(tmp_path / 'b4')

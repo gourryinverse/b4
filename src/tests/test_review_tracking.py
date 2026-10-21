@@ -408,6 +408,17 @@ class TestCmdEnroll:
         metadata_path = os.path.join(gitdir, '.git', 'b4-review', 'metadata.json')
         assert os.path.exists(metadata_path)
 
+    def test_enroll_honors_data_dir(self, gitdir: str, tmp_path: pathlib.Path) -> None:
+        """A checkout with b4.data-dir keeps its tracking database there."""
+        datadir = tmp_path / 'checkout-data'
+        b4.git_set_config(gitdir, 'b4.data-dir', str(datadir))
+        b4._setup_main_config(topdir=gitdir)
+        cmdargs = argparse.Namespace(repo_path=gitdir, identifier='own-state')
+        review_tracking.cmd_enroll(cmdargs)
+
+        assert (datadir / 'review' / 'own-state.sqlite3').exists()
+        assert not (tmp_path / 'b4' / 'review' / 'own-state.sqlite3').exists()
+
     def test_enroll_uses_dirname_as_default_identifier(self, gitdir: str) -> None:
         """Verify enroll uses directory name as default identifier."""
         cmdargs = argparse.Namespace(repo_path=gitdir, identifier=None)
