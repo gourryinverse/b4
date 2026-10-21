@@ -494,3 +494,65 @@ class TestHeaderToggle:
             await pilot.pause()
             screen = await _open(app, pilot)
             assert self._names(screen) == BRIEF
+
+
+def _cycle_tree(*links: Tuple[str, Optional[str], int]) -> List[Tuple[str, str]]:
+    """Thread (msgid, in_reply_to, minute) messages; return (msgid, tree_art)."""
+    lmbx = b4.LoreMailbox()
+    for msgid, parent, minute in links:
+        msg = email.message.EmailMessage()
+        msg['From'] = 'Dev <dev@example.com>'
+        msg['Subject'] = 'Re: [PATCH] top'
+        msg['Date'] = email.utils.formatdate(1_700_000_000 + minute * 60)
+        msg['Message-Id'] = f'<{msgid}@example.com>'
+        if parent is not None:
+            msg['In-Reply-To'] = f'<{parent}@example.com>'
+        msg.set_content('Body.\n')
+        lmbx.add_message(msg)
+    return [(n.lmsg.msgid.split('@')[0], n.tree_art) for n in build_thread_tree(lmbx)]
+
+
+class TestThreadTreeCycles:
+    """Replies whose In-Reply-To headers form a cycle must not vanish."""
+
+    def test_cyclic_replies_are_kept(self) -> None:
+        flat = _cycle_tree(('top', None, 0), ('a', 'b', 1), ('b', 'a', 2))
+        assert sorted(msgid for msgid, _ in flat) == ['a', 'b', 'top']
+
+    def test_cycle_is_broken_at_its_earliest_message(self) -> None:
+        assert _cycle_tree(('b', 'a', 2), ('a', 'b', 1)) == [('a', ''), ('b', '└─>')]
+
+    def test_self_reply_is_kept(self) -> None:
+        assert _cycle_tree(('self', 'self', 0)) == [('self', '')]
+
+    def test_reply_hanging_off_cycle_stays_under_its_parent(self) -> None:
+        # x replies to cycle member a but predates the whole cycle; the cycle
+        # must still be broken at a, not at x.
+        flat = _cycle_tree(
+            ('a', 'b', 5), ('b', 'a', 6), ('x', 'a', 1), ('y', 'x', 2), ('z', 'b', 7)
+        )
+        assert flat == [
+            ('a', ''),
+            ('x', '├─>'),
+            ('y', '│ └─>'),
+            ('b', '└─>'),
+            ('z', '  └─>'),
+        ]
+
+    def test_longer_and_independent_cycles(self) -> None:
+        flat = _cycle_tree(
+            ('top', None, 0),
+            ('p', 'r', 3),
+            ('q', 'p', 1),
+            ('r', 'q', 2),
+            ('m', 'n', 5),
+            ('n', 'm', 4),
+        )
+        assert flat == [
+            ('top', ''),
+            ('q', ''),
+            ('r', '└─>'),
+            ('p', '  └─>'),
+            ('n', ''),
+            ('m', '└─>'),
+        ]

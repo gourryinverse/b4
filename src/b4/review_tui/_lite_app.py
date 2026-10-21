@@ -7,7 +7,7 @@ __author__ = 'Konstantin Ryabitsev <konstantin@linuxfoundation.org>'
 
 import email.utils
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Set
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -82,8 +82,10 @@ def build_thread_tree(lmbx: b4.LoreMailbox) -> List[ThreadNode]:
     """Build a flat, DFS-ordered thread list from a LoreMailbox.
 
     Creates ThreadNode for every message, links children to parents
-    via in_reply_to, sorts by date, and flattens with tree art.  It
-    does not check attestation: that is slow (DKIM needs DNS lookups)
+    via in_reply_to, sorts by date, and flattens with tree art.  Messages
+    whose In-Reply-To headers form a cycle have no root; each cycle is
+    broken at its earliest message, so neither they nor the replies
+    hanging off them vanish.  It does not check attestation: that is slow (DKIM needs DNS lookups)
     and only the message view shows it, so check_attestation() runs
     when a message is opened.
     """
@@ -101,6 +103,41 @@ def build_thread_tree(lmbx: b4.LoreMailbox) -> List[ThreadNode]:
 
     def _sort_key(n: ThreadNode) -> Any:
         return n.lmsg.date
+
+    reached: Set[str] = set()
+
+    def _mark(start: List[ThreadNode]) -> None:
+        stack = list(start)
+        while stack:
+            n = stack.pop()
+            if n.lmsg.msgid not in reached:
+                reached.add(n.lmsg.msgid)
+                stack.extend(n.children)
+
+    _mark(roots)
+    for node in sorted(nodes.values(), key=_sort_key):
+        if node.lmsg.msgid in reached:
+            continue
+        # Only a cycle leaves messages unreached, and every unreached
+        # message's In-Reply-To chain leads into one.  Walk up to that
+        # cycle and detach its earliest member from its parent, so the
+        # walk below terminates and replies hanging off the cycle stay
+        # under their parents.
+        chain: List[ThreadNode] = []
+        position: Dict[str, int] = {}
+        cur = node
+        while cur.lmsg.msgid not in position:
+            position[cur.lmsg.msgid] = len(chain)
+            chain.append(cur)
+            parent_id = cur.lmsg.in_reply_to
+            assert parent_id is not None
+            cur = nodes[parent_id]
+        start = min(chain[position[cur.lmsg.msgid] :], key=_sort_key)
+        parent_id = start.lmsg.in_reply_to
+        assert parent_id is not None
+        nodes[parent_id].children.remove(start)
+        roots.append(start)
+        _mark([start])
 
     def _sort_recursive(node_list: List[ThreadNode]) -> None:
         node_list.sort(key=_sort_key)
