@@ -631,9 +631,13 @@ class LiteThreadScreen(ModalScreen[None]):
         email_dryrun: bool = False,
         patatt_sign: bool = True,
         tracking_info: Optional[Dict[str, Any]] = None,
+        mailbox: Optional[b4.LoreMailbox] = None,
     ) -> None:
         super().__init__()
         self._message_id = message_id
+        # A caller that already holds the thread (a local mailbox, or a
+        # client with its own cache) skips retrieval entirely.
+        self._mailbox = mailbox
         self._email_dryrun = email_dryrun
         self._patatt_sign = patatt_sign
         self._tracking_info = tracking_info
@@ -685,6 +689,8 @@ class LiteThreadScreen(ModalScreen[None]):
             pass
 
     def _fetch_thread(self) -> List[ThreadNode]:
+        if self._mailbox is not None:
+            return build_thread_tree(self._mailbox)
         with _quiet_worker():
             ti = self._tracking_info or {}
             series_dict: Dict[str, Any] = {

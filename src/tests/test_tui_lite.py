@@ -21,6 +21,8 @@ from textual.screen import ModalScreen
 from textual.widgets import ListView, RichLog, Static
 
 import b4
+import b4.review
+import b4.review.tracking
 from b4.review_tui._lite_app import (
     LiteThreadScreen,
     MessageViewScreen,
@@ -556,3 +558,38 @@ class TestThreadTreeCycles:
             ('n', ''),
             ('m', '└─>'),
         ]
+
+
+class _MailboxHost(App[None]):
+    def __init__(self, screen: LiteThreadScreen) -> None:
+        super().__init__()
+        self._lite = screen
+
+    def on_mount(self) -> None:
+        self.push_screen(self._lite)
+
+
+class TestLocalMailbox:
+    """A caller that already holds the thread can show it without lore."""
+
+    async def test_thread_comes_from_given_mailbox(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def refuse(*args: Any, **kwargs: Any) -> None:
+            raise AssertionError('thread was retrieved instead of using the mailbox')
+
+        monkeypatch.setattr(b4.review, '_retrieve_messages', refuse)
+        monkeypatch.setattr(b4.review, 'retrieve_series_messages', refuse)
+        monkeypatch.setattr(b4.review.tracking, 'refresh_message_count', refuse)
+        lmbx = b4.LoreMailbox()
+        for node in _make_tree():
+            lmbx.add_message(node.lmsg.msg)
+        tracking = {'identifier': 'proj', 'change_id': 'cid', 'revision': 1}
+        app = _MailboxHost(
+            LiteThreadScreen('top@example.com', tracking_info=tracking, mailbox=lmbx)
+        )
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            index = app.screen.query_one(ListView)
+            assert len(index.children) == 3
