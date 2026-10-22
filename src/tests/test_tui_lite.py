@@ -705,3 +705,23 @@ class TestReplyFlow:
             compose_followup_reply(host, lmsg)
         host.push_screen.assert_not_called()
         host.notify.assert_called_with('No changes made')
+
+    def test_preview_and_send_without_the_editor(self) -> None:
+        from b4.review_tui._reply import preview_and_send
+
+        host, lmsg, sent, edits = self._host(), self._lmsg(), [], []
+        with mock.patch(
+            'b4.review_tui._reply.send_followup_reply', return_value='MSG'
+        ) as send:
+            preview_and_send(
+                host, lmsg, 'Draft.\n', on_sent=sent.append, on_edit=edits.append
+            )
+            screen, callback = host.push_screen.call_args.args
+            callback('edit')
+            assert edits == ['Draft.\n'] and send.call_count == 0
+            callback(None)
+            assert send.call_count == 0
+            callback('send')
+        assert type(screen).__name__ == 'FollowupReplyPreviewScreen'
+        assert send.call_args.args[2] == 'Draft.\n'
+        assert sent == ['MSG']

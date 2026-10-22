@@ -99,6 +99,41 @@ def compose_followup_reply(
         app.notify('No changes made')
         return
 
+    preview_and_send(
+        app,
+        lmsg,
+        reply_text,
+        email_dryrun=email_dryrun,
+        patatt_sign=patatt_sign,
+        on_sent=on_sent,
+        on_edit=lambda text: compose_followup_reply(
+            app,
+            lmsg,
+            email_dryrun=email_dryrun,
+            patatt_sign=patatt_sign,
+            on_sent=on_sent,
+            initial_text=text,
+            topdir=topdir,
+        ),
+    )
+
+
+def preview_and_send(
+    app: 'App[Any]',
+    lmsg: 'b4.LoreMessage',
+    reply_text: str,
+    *,
+    email_dryrun: bool = False,
+    patatt_sign: bool = True,
+    on_sent: Optional[Callable[[email.message.EmailMessage], None]] = None,
+    on_edit: Optional[Callable[[str], None]] = None,
+) -> None:
+    """Preview a reply already written, then send it if the user confirms.
+
+    For front ends that edit the reply themselves.  *on_edit* runs with
+    the text when the user asks to edit it further; abandoning the
+    preview does nothing.
+    """
     # The fields FollowupReplyPreviewScreen expects
     entry = {
         'lmsg': lmsg,
@@ -119,15 +154,7 @@ def compose_followup_reply(
             )
             if msg is not None and on_sent is not None:
                 on_sent(msg)
-        elif action == 'edit':
-            compose_followup_reply(
-                app,
-                lmsg,
-                email_dryrun=email_dryrun,
-                patatt_sign=patatt_sign,
-                on_sent=on_sent,
-                initial_text=reply_text,
-                topdir=topdir,
-            )
+        elif action == 'edit' and on_edit is not None:
+            on_edit(reply_text)
 
     app.push_screen(FollowupReplyPreviewScreen(entry, reply_text), _on_preview)
