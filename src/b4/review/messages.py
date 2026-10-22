@@ -76,6 +76,18 @@ def get_flags_bulk(conn: sqlite3.Connection, msgids: List[str]) -> Dict[str, str
     return {row[0]: row[1] for row in cursor.fetchall()}
 
 
+def get_all_flags(conn: sqlite3.Connection) -> List[Dict[str, Optional[str]]]:
+    """Return every stored message as ``{'msgid', 'msg_date', 'flags'}``, by msgid.
+
+    For front ends that export or synchronise flags across machines.
+    """
+    cursor = conn.execute('SELECT msgid, msg_date, flags FROM messages ORDER BY msgid')
+    return [
+        {'msgid': row[0], 'msg_date': row[1], 'flags': row[2]}
+        for row in cursor.fetchall()
+    ]
+
+
 def set_flag(
     conn: sqlite3.Connection, msgid: str, flag: str, msg_date: Optional[str] = None
 ) -> None:

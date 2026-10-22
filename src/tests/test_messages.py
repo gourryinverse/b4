@@ -72,6 +72,30 @@ class TestGetFlagsBulk:
         conn.close()
 
 
+class TestGetAllFlags:
+    """Tests for get_all_flags()."""
+
+    def test_empty(self) -> None:
+        conn = messages.get_db()
+        assert messages.get_all_flags(conn) == []
+        conn.close()
+
+    def test_returns_every_message_sorted(self) -> None:
+        conn = messages.get_db()
+        messages.set_flag(conn, 'b@example.com', 'Seen', '2024-01-02T00:00:00+00:00')
+        messages.set_flag(conn, 'b@example.com', 'Answered')
+        messages.set_flag(conn, 'a@example.com', 'Seen')
+        assert messages.get_all_flags(conn) == [
+            {'msgid': 'a@example.com', 'msg_date': None, 'flags': 'Seen'},
+            {
+                'msgid': 'b@example.com',
+                'msg_date': '2024-01-02T00:00:00+00:00',
+                'flags': 'Answered Seen',
+            },
+        ]
+        conn.close()
+
+
 class TestSetFlag:
     """Tests for set_flag()."""
 
