@@ -1178,6 +1178,54 @@ class TestUpdateSeriesStatus:
         conn.close()
 
 
+class TestUnarchiveSeries:
+    """Tests for unarchive_series()."""
+
+    @staticmethod
+    def _add(conn: sqlite3.Connection, revision: int, status: str) -> None:
+        review_tracking.add_series_to_db(
+            conn,
+            'change-arch',
+            revision,
+            'Subject',
+            'Author',
+            'a@example.com',
+            '2024-01-15T10:00:00+00:00',
+            f'v{revision}@example.com',
+            3,
+        )
+        review_tracking.update_series_status(
+            conn, 'change-arch', status, revision=revision
+        )
+
+    def test_brings_back_the_newest_archived_revision(
+        self, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        conn = review_tracking.init_db('unarchive-test')
+        self._add(conn, 1, 'archived')
+        self._add(conn, 2, 'archived')
+        review_tracking.add_revision(conn, 'change-arch', 2, 'v2@example.com')
+
+        assert review_tracking.unarchive_series(conn, 'change-arch') == 2
+
+        rows = dict(conn.execute('SELECT revision, status FROM series').fetchall())
+        assert rows == {1: 'archived', 2: 'new'}
+        assert [
+            r['revision'] for r in review_tracking.get_revisions(conn, 'change-arch')
+        ] == [2]
+        conn.close()
+
+    def test_none_when_nothing_is_archived(
+        self, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        conn = review_tracking.init_db('unarchive-noop-test')
+        self._add(conn, 1, 'reviewing')
+        assert review_tracking.unarchive_series(conn, 'change-arch') is None
+        assert review_tracking.unarchive_series(conn, 'nonexistent') is None
+        assert review_tracking.get_series_status(conn, 'change-arch', 1) == 'reviewing'
+        conn.close()
+
+
 class TestGitGetCommonDir:
     """Tests for git_get_common_dir()."""
 

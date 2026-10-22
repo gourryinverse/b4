@@ -2158,6 +2158,28 @@ def update_series_status(
     conn.commit()
 
 
+def unarchive_series(conn: sqlite3.Connection, change_id: str) -> Optional[int]:
+    """Bring an archived series back to 'new', keeping its records.
+
+    Tracking an archived series again is refused in favour of forgetting
+    it, which erases its revision catalog too.  A front end that lets a
+    maintainer untrack (archive) a series needs a way to undo that.  The
+    newest archived revision returns to 'new'; any archive tarball stays
+    in the data directory.  Returns that revision, or None when nothing
+    is archived.
+    """
+    row = conn.execute(
+        "SELECT revision FROM series WHERE change_id = ? AND status = 'archived'"
+        ' ORDER BY revision DESC LIMIT 1',
+        (change_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    revision = int(row[0])
+    update_series_status(conn, change_id, 'new', revision=revision)
+    return revision
+
+
 def update_series_revision(
     conn: sqlite3.Connection,
     change_id: str,
