@@ -7758,6 +7758,39 @@ def _suspend_to_shell(
         subprocess.run([shell], env=env, cwd=cwd)
 
 
+def get_editor_cmd(topdir: Optional[str] = None) -> List[str]:
+    """The user's editor as an argument list, chosen as git chooses it.
+
+    GIT_EDITOR, then core.editor of *topdir*'s repository, then VISUAL,
+    EDITOR, and finally vi.  core.editor comes from the same tree as the
+    edit, so a repository-local setting is the one belonging to it.  Front
+    ends that run the editor themselves (in a terminal multiplexer pane,
+    say) use this to open the same editor edit_in_editor() would.
+    """
+    corecfg = get_config_from_git(r'core\..*', gitdir=topdir)
+    editor = (
+        os.environ.get('GIT_EDITOR')
+        or corecfg.get('editor')
+        or os.environ.get('VISUAL')
+        or os.environ.get('EDITOR')
+        or 'vi'
+    )
+    logger.debug('editor=%s', editor)
+    sp = shlex.shlex(str(editor), posix=True)
+    sp.whitespace_split = True
+    return list(sp)
+
+
+def unix_newlines(bdata: bytes) -> bytes:
+    """Canonicalize CRLF and CR line endings to LF.
+
+    Mail-oriented editor configs may save the buffer with CRLF line
+    endings (e.g. fileformat=dos forced on *.eml files); every consumer
+    of edited text expects unix endings.
+    """
+    return bdata.replace(b'\r\n', b'\n').replace(b'\r', b'\n')
+
+
 def edit_in_editor(
     bdata: bytes,
     filehint: str = 'COMMIT_EDITMSG',
@@ -7791,17 +7824,7 @@ def edit_in_editor(
     # HEAD reads as None and still guards: None is not a branch we started
     # on, so checking one out mid-edit is caught like any other switch.
     read_branch = git_get_current_branch(topdir) if guard_branch else None
-    # core.editor comes from the same tree as everything else here, so a
-    # repository-local setting is the one belonging to the edited branch.
-    corecfg = get_config_from_git(r'core\..*', gitdir=topdir)
-    editor = (
-        os.environ.get('GIT_EDITOR')
-        or corecfg.get('editor')
-        or os.environ.get('VISUAL')
-        or os.environ.get('EDITOR')
-        or 'vi'
-    )
-    logger.debug('editor=%s', editor)
+    editor_cmd = get_editor_cmd(topdir)
 
     if topdir is not None:
         p = Path(topdir)
@@ -7813,9 +7836,7 @@ def edit_in_editor(
         with open(temp_fpath, 'xb') as edit_file:
             edit_file.write(bdata)
 
-        sp = shlex.shlex(editor, posix=True)
-        sp.whitespace_split = True
-        cmdargs = list(sp) + [temp_fpath]
+        cmdargs = editor_cmd + [temp_fpath]
         logger.debug('Running %s', ' '.join(cmdargs))
         spop = subprocess.Popen(cmdargs)
         spop.wait()
@@ -7823,10 +7844,7 @@ def edit_in_editor(
         with open(temp_fpath, 'rb') as edited_file:
             bdata = edited_file.read()
 
-    # Mail-oriented editor configs may save the buffer with CRLF line
-    # endings (e.g. fileformat=dos forced on *.eml files); every consumer
-    # of the edited text expects unix endings, so canonicalize here.
-    bdata = bdata.replace(b'\r\n', b'\n').replace(b'\r', b'\n')
+    bdata = unix_newlines(bdata)
 
     if guard_branch:
         write_branch = git_get_current_branch(topdir)

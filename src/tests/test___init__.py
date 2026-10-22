@@ -2170,6 +2170,29 @@ def test_edit_in_editor_normalizes_crlf(
     assert out == b'line one\nline two\n\nlast\n'
 
 
+def test_get_editor_cmd_follows_gits_order(
+    gitdir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Front ends that run the editor themselves (e.g. in a terminal
+    multiplexer pane) pick the same editor edit_in_editor() would."""
+    for var in ('GIT_EDITOR', 'VISUAL', 'EDITOR'):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv('GIT_CONFIG_GLOBAL', os.devnull)
+    monkeypatch.setenv('GIT_CONFIG_NOSYSTEM', '1')
+    assert b4.get_editor_cmd(gitdir) == ['vi']
+    monkeypatch.setenv('EDITOR', 'nano')
+    monkeypatch.setenv('VISUAL', 'vim -u NONE')
+    assert b4.get_editor_cmd(gitdir) == ['vim', '-u', 'NONE']
+    b4.git_set_config(gitdir, 'core.editor', "emacs -nw --eval '(foo)'")
+    assert b4.get_editor_cmd(gitdir) == ['emacs', '-nw', '--eval', '(foo)']
+    monkeypatch.setenv('GIT_EDITOR', 'ed')
+    assert b4.get_editor_cmd(gitdir) == ['ed']
+
+
+def test_unix_newlines() -> None:
+    assert b4.unix_newlines(b'a\r\nb\rc\n') == b'a\nb\nc\n'
+
+
 def test_git_run_command_log_fixup_looks_past_option_prefix(gitdir: str) -> None:
     """``--no-abbrev-commit`` must survive a leading ``-c`` override.
 
