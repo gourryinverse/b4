@@ -694,7 +694,7 @@ class TestSashikoCache:
         session.get.return_value = resp
 
         with mock.patch('b4.get_requests_session', return_value=session):
-            data = checks._fetch_sashiko_patchset(
+            data = checks.fetch_sashiko_patchset(
                 'cover@example.com', 'https://sashiko.dev'
             )
 
@@ -707,7 +707,7 @@ class TestSashikoCache:
         assert 'patch3@example.com' in checks._sashiko_patchset_cache
         # Second call should use cache, not network
         session.get.reset_mock()
-        data2 = checks._fetch_sashiko_patchset(
+        data2 = checks.fetch_sashiko_patchset(
             'patch2@example.com', 'https://sashiko.dev'
         )
         session.get.assert_not_called()
@@ -729,7 +729,7 @@ class TestSashikoCache:
         session.get.configure_mock(**get_config)
 
         with mock.patch('b4.get_requests_session', return_value=session):
-            data = checks._fetch_sashiko_patchset(
+            data = checks.fetch_sashiko_patchset(
                 'unknown@example.com', 'https://sashiko.dev'
             )
 
@@ -738,7 +738,7 @@ class TestSashikoCache:
 
 
 class TestParseSashikoFindings:
-    """Tests for _parse_sashiko_findings."""
+    """Tests for parse_sashiko_findings."""
 
     @pytest.mark.parametrize(
         'review',
@@ -751,7 +751,7 @@ class TestParseSashikoFindings:
         ],
     )
     def test_unusable_output_yields_no_findings(self, review: Dict[str, Any]) -> None:
-        assert checks._parse_sashiko_findings(review) == []
+        assert checks.parse_sashiko_findings(review) == []
 
     @pytest.mark.parametrize(
         'severity,problem,status,state',
@@ -770,7 +770,7 @@ class TestParseSashikoFindings:
                 {'findings': [{'severity': severity, 'problem': problem}]}
             )
         }
-        findings = checks._parse_sashiko_findings(review)
+        findings = checks.parse_sashiko_findings(review)
         assert len(findings) == 1
         assert findings[0]['status'] == status
         assert findings[0]['state'] == state
@@ -791,9 +791,32 @@ class TestParseSashikoFindings:
                 }
             )
         }
-        findings = checks._parse_sashiko_findings(review)
+        findings = checks.parse_sashiko_findings(review)
         assert 'Bug' in findings[0]['description']
         assert 'This is dangerous' in findings[0]['description']
+
+    def test_problem_and_explanation_kept_apart(self) -> None:
+        """Front ends that list findings show the problem alone as a headline."""
+        review = {
+            'output': json.dumps(
+                {
+                    'findings': [
+                        {
+                            'severity': 'Medium',
+                            'problem': 'mm: retry loses reserve',
+                            'severity_explanation': 'Allocation can fail',
+                            'preexisting': True,
+                        },
+                        {'severity': 'Low', 'message': 'Legacy message'},
+                    ],
+                }
+            )
+        }
+        first, legacy = checks.parse_sashiko_findings(review)
+        assert first['problem'] == 'mm: retry loses reserve'
+        assert first['explanation'] == 'Allocation can fail'
+        assert legacy['problem'] == 'Legacy message'
+        assert legacy['explanation'] == ''
 
     def test_legacy_suggestion_ignored(self) -> None:
         """Old 'suggestion' field no longer appears; should not be treated as
@@ -807,7 +830,7 @@ class TestParseSashikoFindings:
                 }
             )
         }
-        findings = checks._parse_sashiko_findings(review)
+        findings = checks.parse_sashiko_findings(review)
         assert 'Bug' in findings[0]['description']
         assert 'Fix it' not in findings[0]['description']
 
@@ -820,7 +843,7 @@ class TestParseSashikoFindings:
                 }
             )
         }
-        findings = checks._parse_sashiko_findings(review)
+        findings = checks.parse_sashiko_findings(review)
         assert len(findings) == 1
         assert 'Old style bug' in findings[0]['description']
 
@@ -838,7 +861,7 @@ class TestParseSashikoFindings:
                 }
             )
         }
-        findings = checks._parse_sashiko_findings(review)
+        findings = checks.parse_sashiko_findings(review)
         assert len(findings) == 1
         assert findings[0]['status'] == 'pass'
         assert findings[0]['preexisting'] is True
@@ -855,15 +878,15 @@ class TestParseSashikoFindings:
                 }
             )
         }
-        findings = checks._parse_sashiko_findings(review)
+        findings = checks.parse_sashiko_findings(review)
         assert len(findings) == 2
 
 
 class TestSashikoFindingsSummary:
-    """Tests for _sashiko_findings_summary."""
+    """Tests for sashiko_findings_summary."""
 
     def test_no_findings(self) -> None:
-        worst, summary = checks._sashiko_findings_summary([])
+        worst, summary = checks.sashiko_findings_summary([])
         assert worst == 'pass'
         assert summary == 'No findings'
 
@@ -876,7 +899,7 @@ class TestSashikoFindingsSummary:
                 'preexisting': False,
             }
         ]
-        worst, summary = checks._sashiko_findings_summary(findings)
+        worst, summary = checks.sashiko_findings_summary(findings)
         assert worst == 'fail'
         assert '1 critical' in summary
 
@@ -902,7 +925,7 @@ class TestSashikoFindingsSummary:
             },
             {'status': 'pass', 'state': 'low', 'description': '', 'preexisting': False},
         ]
-        worst, summary = checks._sashiko_findings_summary(findings)
+        worst, summary = checks.sashiko_findings_summary(findings)
         assert worst == 'fail'
         assert '1 critical' in summary
         assert '1 high' in summary
@@ -914,7 +937,7 @@ class TestSashikoFindingsSummary:
             {'status': 'pass', 'state': 'low', 'description': '', 'preexisting': False},
             {'status': 'pass', 'state': 'low', 'description': '', 'preexisting': False},
         ]
-        worst, summary = checks._sashiko_findings_summary(findings)
+        worst, summary = checks.sashiko_findings_summary(findings)
         assert worst == 'pass'
         assert '2 low' in summary
 
@@ -934,7 +957,7 @@ class TestSashikoFindingsSummary:
                 'preexisting': True,
             },
         ]
-        worst, summary = checks._sashiko_findings_summary(findings)
+        worst, summary = checks.sashiko_findings_summary(findings)
         assert worst == 'pass'
         assert summary == 'No new findings'
 
@@ -954,7 +977,7 @@ class TestSashikoFindingsSummary:
                 'preexisting': True,
             },
         ]
-        worst, summary = checks._sashiko_findings_summary(findings)
+        worst, summary = checks.sashiko_findings_summary(findings)
         assert worst == 'fail'
         assert '1 critical' in summary  # only the fresh one
         assert '2 critical' not in summary

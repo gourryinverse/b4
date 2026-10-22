@@ -390,7 +390,7 @@ def _run_builtin_patchwork(
     ]
 
 
-def _fetch_sashiko_patchset(msgid: str, sashiko_url: str) -> Optional[Dict[str, Any]]:
+def fetch_sashiko_patchset(msgid: str, sashiko_url: str) -> Optional[Dict[str, Any]]:
     """Fetch patchset data from sashiko, with in-process caching.
 
     The cache ensures only one API call per series, even when checking
@@ -426,7 +426,7 @@ def _fetch_sashiko_patchset(msgid: str, sashiko_url: str) -> Optional[Dict[str, 
     return data
 
 
-def _parse_sashiko_findings(review: Dict[str, Any]) -> List[Dict[str, Any]]:
+def parse_sashiko_findings(review: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Parse findings from a sashiko review's output JSON.
 
     Understands the current sashiko finding schema:
@@ -438,6 +438,9 @@ def _parse_sashiko_findings(review: Dict[str, Any]) -> List[Dict[str, Any]]:
     ``status='pass'`` and their description prefixed with
     ``(pre-existing)`` so callers can surface them without escalating
     the overall check status.
+
+    ``problem`` and ``explanation`` carry the headline and the severity
+    explanation separately, for callers that list findings.
     """
     output_str = review.get('output', '') or ''
     if not output_str:
@@ -478,6 +481,8 @@ def _parse_sashiko_findings(review: Dict[str, Any]) -> List[Dict[str, Any]]:
                 'context': f'sashiko/{severity}',
                 'state': severity,
                 'description': desc,
+                'problem': str(problem),
+                'explanation': str(sev_explanation or ''),
                 'preexisting': preexisting,
                 'locations': locations,
             }
@@ -485,7 +490,7 @@ def _parse_sashiko_findings(review: Dict[str, Any]) -> List[Dict[str, Any]]:
     return findings
 
 
-def _sashiko_findings_summary(findings: List[Dict[str, Any]]) -> Tuple[str, str]:
+def sashiko_findings_summary(findings: List[Dict[str, Any]]) -> Tuple[str, str]:
     """Return ``(worst_status, summary_text)`` for a list of findings.
 
     Pre-existing findings are excluded from severity escalation and the
@@ -496,7 +501,7 @@ def _sashiko_findings_summary(findings: List[Dict[str, Any]]) -> Tuple[str, str]
         return 'pass', 'No findings'
 
     # Only count findings introduced by this series; pre-existing issues
-    # have already been downgraded to status='pass' by _parse_sashiko_findings
+    # have already been downgraded to status='pass' by parse_sashiko_findings
     # but we also exclude them from the human-readable count string.
     effective = [f for f in findings if not f.get('preexisting')]
     if not effective:
@@ -524,7 +529,7 @@ def _run_builtin_sashiko(msg: EmailMessage, sashiko_url: str) -> List[Dict[str, 
     if not msgid:
         return []
 
-    data = _fetch_sashiko_patchset(msgid, sashiko_url)
+    data = fetch_sashiko_patchset(msgid, sashiko_url)
     if not data:
         return []
 
@@ -580,8 +585,8 @@ def _run_builtin_sashiko(msg: EmailMessage, sashiko_url: str) -> List[Dict[str, 
         # Aggregate findings across all reviews for the cover letter
         all_findings: List[Dict[str, str]] = []
         for review in reviews:
-            all_findings.extend(_parse_sashiko_findings(review))
-        worst, summary = _sashiko_findings_summary(all_findings)
+            all_findings.extend(parse_sashiko_findings(review))
+        worst, summary = sashiko_findings_summary(all_findings)
         result: Dict[str, str] = {
             'tool': 'sashiko',
             'status': worst,
@@ -631,8 +636,8 @@ def _run_builtin_sashiko(msg: EmailMessage, sashiko_url: str) -> List[Dict[str, 
                     }
                 ]
             # Reviewed — parse findings
-            findings = _parse_sashiko_findings(review)
-            worst, summary = _sashiko_findings_summary(findings)
+            findings = parse_sashiko_findings(review)
+            worst, summary = sashiko_findings_summary(findings)
             result = {
                 'tool': 'sashiko',
                 'status': worst,

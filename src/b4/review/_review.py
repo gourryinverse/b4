@@ -1842,10 +1842,10 @@ def _integrate_sashiko_reviews(
     if not series_msgid:
         return False
 
-    from b4.review.checks import _fetch_sashiko_patchset, clear_sashiko_cache
+    from b4.review.checks import fetch_sashiko_patchset, clear_sashiko_cache
 
     clear_sashiko_cache()
-    patchset = _fetch_sashiko_patchset(series_msgid, sashiko_url)
+    patchset = fetch_sashiko_patchset(series_msgid, sashiko_url)
     if not patchset:
         return False
 

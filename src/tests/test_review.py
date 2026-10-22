@@ -3447,7 +3447,7 @@ class TestIntegrateSashikoReviews:
             'b4.get_main_config', return_value={'sashiko-url': 'https://sashiko.dev'}
         ):
             with mock.patch(
-                'b4.review.checks._fetch_sashiko_patchset', return_value=None
+                'b4.review.checks.fetch_sashiko_patchset', return_value=None
             ):
                 with mock.patch('b4.review.checks.clear_sashiko_cache'):
                     result = review._integrate_sashiko_reviews(
@@ -3479,7 +3479,7 @@ class TestIntegrateSashikoReviews:
             'b4.get_main_config', return_value={'sashiko-url': 'https://sashiko.dev'}
         ):
             with mock.patch(
-                'b4.review.checks._fetch_sashiko_patchset',
+                'b4.review.checks.fetch_sashiko_patchset',
                 return_value=self._SASHIKO_RESPONSE,
             ):
                 with mock.patch('b4.review.checks.clear_sashiko_cache'):
@@ -3517,7 +3517,7 @@ class TestIntegrateSashikoReviews:
             'b4.get_main_config', return_value={'sashiko-url': 'https://sashiko.dev'}
         ):
             with mock.patch(
-                'b4.review.checks._fetch_sashiko_patchset',
+                'b4.review.checks.fetch_sashiko_patchset',
                 return_value=self._SASHIKO_RESPONSE,
             ):
                 with mock.patch('b4.review.checks.clear_sashiko_cache'):
@@ -3534,7 +3534,7 @@ class TestIntegrateSashikoReviews:
             'b4.get_main_config', return_value={'sashiko-url': 'https://sashiko.dev'}
         ):
             with mock.patch(
-                'b4.review.checks._fetch_sashiko_patchset', return_value=None
+                'b4.review.checks.fetch_sashiko_patchset', return_value=None
             ) as mock_fetch:
                 with mock.patch('b4.review.checks.clear_sashiko_cache'):
                     review._integrate_sashiko_reviews('/tmp', '', tracking, [], [])
@@ -3588,7 +3588,7 @@ class TestIntegrateSashikoReviews:
             'b4.get_main_config', return_value={'sashiko-url': 'https://sashiko.dev'}
         ):
             with mock.patch(
-                'b4.review.checks._fetch_sashiko_patchset', return_value=patchset
+                'b4.review.checks.fetch_sashiko_patchset', return_value=patchset
             ):
                 with mock.patch('b4.review.checks.clear_sashiko_cache'):
                     with mock.patch('b4.git_run_command', return_value=(0, real_diff)):
@@ -3629,7 +3629,7 @@ class TestIntegrateSashikoReviews:
             'b4.get_main_config', return_value={'sashiko-url': 'https://sashiko.dev'}
         ):
             with mock.patch(
-                'b4.review.checks._fetch_sashiko_patchset',
+                'b4.review.checks.fetch_sashiko_patchset',
                 return_value=self._SASHIKO_RESPONSE,
             ):
                 with mock.patch('b4.review.checks.clear_sashiko_cache'):
@@ -3746,7 +3746,7 @@ class TestSashikoLocationsIntegration:
             'b4.get_main_config', return_value={'sashiko-url': 'https://sashiko.dev'}
         ):
             with mock.patch(
-                'b4.review.checks._fetch_sashiko_patchset', return_value=patchset
+                'b4.review.checks.fetch_sashiko_patchset', return_value=patchset
             ):
                 with mock.patch('b4.review.checks.clear_sashiko_cache'):
                     with mock.patch('b4.git_run_command', return_value=(0, real_diff)):
@@ -3808,7 +3808,7 @@ class TestSashikoLocationsIntegration:
             'b4.get_main_config', return_value={'sashiko-url': 'https://sashiko.dev'}
         ):
             with mock.patch(
-                'b4.review.checks._fetch_sashiko_patchset', return_value=patchset
+                'b4.review.checks.fetch_sashiko_patchset', return_value=patchset
             ):
                 with mock.patch('b4.review.checks.clear_sashiko_cache'):
                     with mock.patch('b4.git_run_command', return_value=(0, real_diff)):
