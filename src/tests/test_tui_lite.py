@@ -593,3 +593,115 @@ class TestLocalMailbox:
             await pilot.pause()
             index = app.screen.query_one(ListView)
             assert len(index.children) == 3
+
+
+class TestReplyFlow:
+    """The reply flow works for any Textual app, not just LiteThreadScreen."""
+
+    @staticmethod
+    def _host() -> mock.Mock:
+        host = mock.Mock()
+        host.suspend.side_effect = lambda: contextlib.nullcontext()
+        return host
+
+    @staticmethod
+    def _lmsg() -> mock.Mock:
+        lmsg = mock.Mock()
+        lmsg.fromname = 'Reviewer'
+        lmsg.fromemail = 'reviewer@example.com'
+        lmsg.date = None
+        lmsg.body = 'line one\nline two\n'
+        lmsg.make_reply.return_value = email.message.EmailMessage()
+        return lmsg
+
+    def test_quote_attributes_and_quotes_the_body(self) -> None:
+        from b4.review_tui._reply import reply_quote
+
+        assert (
+            reply_quote(self._lmsg())
+            == 'On , Reviewer wrote:\n> line one\n> line two\n\n'
+        )
+
+    def test_send_returns_the_message_and_marks_it_seen(self) -> None:
+        from b4.review_tui._reply import send_followup_reply
+
+        lmsg = self._lmsg()
+        with (
+            mock.patch('b4.get_smtp', return_value=(None, 'me@example.com')),
+            mock.patch('b4.send_mail', return_value=1) as send_mail,
+            mock.patch('b4.review_tui._reply.mark_outgoing_seen') as seen,
+        ):
+            msg = send_followup_reply(self._host(), lmsg, 'Thanks.\n')
+        assert msg is lmsg.make_reply.return_value
+        assert send_mail.call_args.args[1] == [msg]
+        assert send_mail.call_args.kwargs['patatt_sign'] is True
+        seen.assert_called_once_with([msg])
+
+    def test_send_failure_is_reported_not_raised(self) -> None:
+        from b4.review_tui._reply import send_followup_reply
+
+        host = self._host()
+        with (
+            mock.patch('b4.get_smtp', side_effect=RuntimeError('no smtp')),
+            mock.patch('b4.review_tui._reply.mark_outgoing_seen') as seen,
+        ):
+            assert send_followup_reply(host, self._lmsg(), 'Thanks.\n') is None
+        assert 'no smtp' in host.notify.call_args.args[0]
+        seen.assert_not_called()
+
+    def test_dry_run_is_not_marked_sent(self) -> None:
+        from b4.review_tui._reply import send_followup_reply
+
+        with (
+            mock.patch('b4.get_smtp', return_value=(None, 'me@example.com')),
+            mock.patch('b4.send_mail', return_value=1) as send_mail,
+            mock.patch('b4.review_tui._reply.mark_outgoing_seen') as seen,
+        ):
+            msg = send_followup_reply(
+                self._host(), self._lmsg(), 'x\n', email_dryrun=True
+            )
+        assert msg is not None
+        assert send_mail.call_args.kwargs['dryrun'] is True
+        seen.assert_not_called()
+
+    def test_compose_edits_previews_sends_and_reports(self) -> None:
+        from b4.review_tui._reply import compose_followup_reply
+
+        host, lmsg, sent = self._host(), self._lmsg(), []
+        with (
+            mock.patch(
+                'b4.review_tui._reply.suspend_and_edit', return_value=b'My reply.\n'
+            ),
+            mock.patch(
+                'b4.review_tui._reply.send_followup_reply', return_value='MSG'
+            ) as send,
+        ):
+            compose_followup_reply(host, lmsg, on_sent=sent.append)
+            screen, callback = host.push_screen.call_args.args
+            callback('send')
+        assert type(screen).__name__ == 'FollowupReplyPreviewScreen'
+        assert send.call_args.args[2] == 'My reply.\n'
+        assert sent == ['MSG']
+
+    def test_compose_edit_reopens_editor_with_current_text(self) -> None:
+        from b4.review_tui._reply import compose_followup_reply
+
+        host, lmsg = self._host(), self._lmsg()
+        with mock.patch(
+            'b4.review_tui._reply.suspend_and_edit', side_effect=[b'First.\n', None]
+        ) as edit:
+            compose_followup_reply(host, lmsg)
+            host.push_screen.call_args.args[1]('edit')
+        assert edit.call_args_list[1].args[1] == b'First.\n'
+
+    def test_unchanged_text_sends_nothing(self) -> None:
+        from b4.review_tui._reply import compose_followup_reply, reply_quote
+
+        host, lmsg = self._host(), self._lmsg()
+        unchanged = reply_quote(lmsg).encode()
+        with mock.patch(
+            'b4.review_tui._reply.suspend_and_edit', return_value=unchanged
+        ):
+            compose_followup_reply(host, lmsg)
+        host.push_screen.assert_not_called()
+        host.notify.assert_called_with('No changes made')

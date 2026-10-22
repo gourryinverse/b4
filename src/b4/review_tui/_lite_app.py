@@ -26,14 +26,11 @@ from b4.review_tui._common import (
     _quiet_worker,
     _write_diff_line,
     display_width,
-    mark_outgoing_seen,
     pad_display,
-    prepare_followup_reply_body,
     resolve_styles,
     run_lore_worker,
-    suspend_and_edit,
 )
-from b4.review_tui._modals import FollowupReplyPreviewScreen
+from b4.review_tui._reply import compose_followup_reply, send_followup_reply
 
 # Headers above a message body: none, the useful few, or all of them
 HeaderMode = Literal['none', 'brief', 'full']
@@ -961,70 +958,26 @@ class LiteThreadScreen(ModalScreen[None]):
         self, node: ThreadNode, initial_text: Optional[str] = None
     ) -> None:
         """Compose a reply to the given thread node using external editor."""
-        lmsg = node.lmsg
-        if initial_text is not None:
-            editor_text = initial_text
-        else:
-            orig_date = lmsg.date.strftime('%Y-%m-%d %H:%M %z') if lmsg.date else ''
-            orig_author = lmsg.fromname or lmsg.fromemail
-            body = lmsg.body or ''
-            quoted = '\n'.join(f'> {line}' for line in body.splitlines())
-            editor_text = f'On {orig_date}, {orig_author} wrote:\n{quoted}\n\n'
-
-        result = suspend_and_edit(self.app, editor_text.encode(), 'reply.eml')
-        if result is None:
-            return
-        reply_text = result.decode(errors='replace')
-        if reply_text == editor_text:
-            self.app.notify('No changes made')
-            return
-
-        # Build entry dict that FollowupReplyPreviewScreen expects
-        entry: Dict[str, Any] = {
-            'lmsg': lmsg,
-            'fromname': lmsg.fromname,
-            'fromemail': lmsg.fromemail,
-            'date': lmsg.date,
-            'body': lmsg.body or '',
-        }
-
-        def _on_preview(action: Optional[str]) -> None:
-            if action == 'send':
-                self._send_reply(node, reply_text)
-            elif action == 'edit':
-                self.compose_reply(node, reply_text)
-
-        self.app.push_screen(FollowupReplyPreviewScreen(entry, reply_text), _on_preview)
+        compose_followup_reply(
+            self.app,
+            node.lmsg,
+            email_dryrun=self._email_dryrun,
+            patatt_sign=self._patatt_sign,
+            on_sent=lambda _msg: self._mark_answered(node),
+            initial_text=initial_text,
+        )
 
     def _send_reply(self, node: ThreadNode, text: str) -> None:
         """Build and send a reply to the given thread node."""
-        lmsg = node.lmsg
-        text = prepare_followup_reply_body(text)
-        msg = lmsg.make_reply(text)
-        try:
-            with self.app.suspend():
-                smtp, fromaddr = b4.get_smtp(dryrun=self._email_dryrun)
-                sent = b4.send_mail(
-                    smtp,
-                    [msg],
-                    fromaddr=fromaddr,
-                    patatt_sign=self._patatt_sign,
-                    dryrun=self._email_dryrun,
-                    output_dir=None,
-                    reflect=False,
-                )
-        except Exception as ex:
-            self.app.notify(f'Send failed: {ex}', severity='error')
-            return
-        if sent is None:
-            self.app.notify('Failed to send reply.', severity='error')
-            return
-        if self._email_dryrun:
-            self.app.notify(f'Dry-run: reply to {lmsg.fromemail} logged, not sent')
-        else:
-            mark_outgoing_seen([msg])
-            self.app.notify(f'Reply sent to {lmsg.fromemail}')
-        self._mark_answered(node)
+        msg = send_followup_reply(
+            self.app,
+            node.lmsg,
+            text,
+            email_dryrun=self._email_dryrun,
+            patatt_sign=self._patatt_sign,
+        )
+        if msg is not None:
+            self._mark_answered(node)
 
     def action_back(self) -> None:
         if self._thread_nodes:
