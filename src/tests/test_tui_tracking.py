@@ -39,6 +39,7 @@ from b4 import (
     _worktree_inprogress_op,
     _worktree_merge_in_progress,
 )
+from b4.review import apply_base_suggestions, detect_apply_base
 from b4.review_tui._modals import (
     ActionItem,
     ActionScreen,
@@ -57,8 +58,6 @@ from b4.review_tui._modals import (
 from b4.review_tui._tracking_app import (
     TrackedSeriesItem,
     TrackingApp,
-    _build_base_suggestions,
-    _detect_initial_base,
     _effective_tier,
     _resolve_worktree_take_conflict,
     _shazam_merge_flags,
@@ -2798,7 +2797,7 @@ class TestDetectInitialBase:
         lser.base_commit = self._head_sha(gitdir)
         short = lser.base_commit[:12]
         with patch('b4.get_main_config', return_value={}):
-            initial_base, base_hint = _detect_initial_base(lser, gitdir)
+            initial_base, base_hint = detect_apply_base(lser, gitdir)
         assert initial_base == short
         assert base_hint == f'Series base: {short}'
 
@@ -2834,7 +2833,7 @@ class TestDetectInitialBase:
                 return_value=(checked, mismatches),
             ),
         ):
-            initial_base, base_hint = _detect_initial_base(lser, gitdir)
+            initial_base, base_hint = detect_apply_base(lser, gitdir)
         if expect_head:
             assert initial_base == 'HEAD'
             assert base_hint == f'Applies cleanly to HEAD; series base: {short}'
@@ -2847,7 +2846,7 @@ class TestDetectInitialBase:
         lser.base_commit = self._head_sha(gitdir)
         short = lser.base_commit[:12]
         with patch('b4.get_main_config', return_value={'review-apply-base': 'HEAD'}):
-            initial_base, base_hint = _detect_initial_base(lser, gitdir)
+            initial_base, base_hint = detect_apply_base(lser, gitdir)
         assert initial_base == 'HEAD'
         assert base_hint == f'Configured base: HEAD; Series base: {short}'
 
@@ -2857,7 +2856,7 @@ class TestDetectInitialBase:
             patch('b4.get_main_config', return_value={'review-apply-base': 'master'}),
             patch.object(b4.LoreSeries, 'find_base', side_effect=IndexError),
         ):
-            initial_base, base_hint = _detect_initial_base(lser, gitdir)
+            initial_base, base_hint = detect_apply_base(lser, gitdir)
         assert initial_base == 'master'
         assert base_hint == 'Configured base: master'
 
@@ -2868,7 +2867,7 @@ class TestDetectInitialBase:
         with patch(
             'b4.get_main_config', return_value={'review-apply-base': 'no-such-ref'}
         ):
-            initial_base, base_hint = _detect_initial_base(lser, gitdir)
+            initial_base, base_hint = detect_apply_base(lser, gitdir)
         assert initial_base == short
         assert base_hint == (
             f'Configured base no-such-ref not found; Series base: {short}'
@@ -2882,7 +2881,7 @@ class TestDetectInitialBase:
             ),
             patch.object(b4.LoreSeries, 'find_base', side_effect=IndexError),
         ):
-            initial_base, base_hint = _detect_initial_base(lser, gitdir)
+            initial_base, base_hint = detect_apply_base(lser, gitdir)
         assert initial_base == 'HEAD'
         assert base_hint == 'Configured base no-such-ref not found'
 
@@ -2894,12 +2893,12 @@ class TestDetectInitialBase:
             'review-target-branch': ['for-next'],
         }
         with patch('b4.get_main_config', return_value=cfg):
-            suggestions = _build_base_suggestions()
+            suggestions = apply_base_suggestions()
         assert suggestions[:3] == ['HEAD', 'master', 'for-next']
 
     def test_suggestions_no_config_base(self, gitdir: str) -> None:
         with patch('b4.get_main_config', return_value={}):
-            suggestions = _build_base_suggestions()
+            suggestions = apply_base_suggestions()
         assert suggestions == ['HEAD']
 
 
@@ -3130,7 +3129,7 @@ class TestUpdateRevisionWorkflow:
             ),
             patch('b4.git_get_toplevel', return_value='/repo'),
             patch(
-                'b4.review_tui._tracking_app._detect_initial_base',
+                'b4.review.detect_apply_base',
                 return_value=('base-sha', 'base hint'),
             ),
         ):
@@ -5025,7 +5024,7 @@ class TestBadCharsGuard:
             ),
             patch('b4.git_get_toplevel', return_value=gitdir),
             patch(
-                'b4.review_tui._tracking_app._detect_initial_base',
+                'b4.review.detect_apply_base',
                 return_value=('HEAD', ''),
             ),
             patch('b4.review.check_series_attestation', return_value=None),

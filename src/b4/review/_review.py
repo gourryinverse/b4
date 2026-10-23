@@ -295,6 +295,118 @@ def get_reference_message(lser: 'b4.LoreSeries') -> 'b4.LoreMessage':
     return ref_msg
 
 
+def detect_apply_base(lser: 'b4.LoreSeries', topdir: Optional[str]) -> Tuple[str, str]:
+    """Determine the base commit to apply a series to, as review checkouts do.
+
+    Shared by the review TUI's base selection dialog and other front ends.
+
+    Auto-detection prefers HEAD when the series applies cleanly there, as
+    maintainers work against their own tree and a series base often points
+    into -next. Otherwise it tries the series-specified base-commit, then a
+    find_base() guess, then falls back to HEAD. When b4.review-apply-base
+    is configured and resolves to a commit, it overrides the auto-detected
+    pre-fill; the auto-detection result moves into the hint so the
+    information is not lost. The value is only a pre-fill -- the dialog
+    input remains editable and is validated on confirmation.
+
+    Returns (initial_base, base_hint).
+    """
+    initial_base = 'HEAD'
+    base_hint = ''
+    head_clean = False
+    if topdir:
+        # Nothing to check (new files only) counts as clean, as it does for
+        # the shazam merge base: such a series applies anywhere.
+        _checked, head_mismatches = lser.check_applies_clean(topdir)
+        head_clean = not head_mismatches
+    if head_clean:
+        base_hint = 'Applies cleanly to HEAD'
+        if lser.base_commit:
+            base_hint += f'; series base: {lser.base_commit[:12]}'
+    elif lser.base_commit and topdir:
+        bc = lser.base_commit
+        short = bc[:12] if len(bc) > 12 else bc
+        if b4.git_commit_exists(topdir, bc):
+            initial_base = short
+            base_hint = f'Series base: {short}'
+        else:
+            base_hint = f'Series base: {short} (not in repo)'
+    if topdir and not head_clean and initial_base == 'HEAD':
+        # No usable series base -- try guessing.
+        # Exclude b4 review branches -- they are never useful as a base for
+        # applying new series. git matches the pattern against the name with
+        # refs/heads/ already stripped.
+        try:
+            guessed, nblobs, mismatches = lser.find_base(
+                topdir,
+                branches=['--exclude=b4/review/*', '--branches']
+                + b4.BASE_SEARCH_REMOTES_AND_TAGS,
+                maxdays=30,
+            )
+            if guessed:
+                # find_base returns a describe name (e.g. heads/foo);
+                # resolve it to a SHA for the input field
+                ecode, sha_out = b4.git_run_command(
+                    topdir, ['rev-parse', '--verify', guessed]
+                )
+                sha = sha_out.strip() if ecode == 0 else ''
+                short_sha = sha[:12] if sha else guessed
+                if mismatches == 0:
+                    initial_base = short_sha
+                    base_hint = f'Guessed base: {guessed} (exact match)'
+                elif nblobs != mismatches:
+                    matched = nblobs - mismatches
+                    initial_base = short_sha
+                    base_hint = f'Guessed base: {guessed} ({matched}/{nblobs} blobs)'
+                else:
+                    base_hint = 'Could not find a matching base'
+        except (IndexError, Exception):
+            pass
+
+    cfg_base = b4.get_main_config().get('review-apply-base')
+    if cfg_base and isinstance(cfg_base, str) and topdir:
+        ecode, _out = b4.git_run_command(
+            topdir, ['rev-parse', '--verify', '--quiet', cfg_base + '^{commit}']
+        )
+        if ecode == 0:
+            initial_base = cfg_base
+            base_hint = f'Configured base: {cfg_base}' + (
+                f'; {base_hint}' if base_hint else ''
+            )
+        else:
+            base_hint = f'Configured base {cfg_base} not found' + (
+                f'; {base_hint}' if base_hint else ''
+            )
+
+    return initial_base, base_hint
+
+
+def apply_base_suggestions(topdir: Optional[str] = None) -> List[str]:
+    """Build the suggestion list for choosing an apply base (*topdir*: the
+    repository; default the current one).
+
+    HEAD first, then the configured apply base and target branches,
+    then recently used take branches.
+    """
+    suggestions: List[str] = ['HEAD']
+    cfg_base = b4.get_main_config().get('review-apply-base')
+    if cfg_base and isinstance(cfg_base, str) and cfg_base not in suggestions:
+        suggestions.append(cfg_base)
+    for cb in b4.review.tracking.get_review_target_branches():
+        if cb not in suggestions:
+            suggestions.append(cb)
+    topdir = topdir or b4.git_get_toplevel()
+    if topdir:
+        gitdir = b4.git_get_common_dir(topdir)
+        if gitdir:
+            recent = b4.review.tracking.get_recent_take_branches(gitdir)
+            if recent:
+                for rb in recent:
+                    if rb not in suggestions:
+                        suggestions.append(rb)
+    return suggestions
+
+
 def create_review_branch(
     topdir: str,
     branch_name: str,

@@ -5072,3 +5072,19 @@ class TestCreateReviewBranchNoCheckout:
         with pytest.raises(SystemExit):
             self._create(gitdir, branch, sideways.strip())
         assert not b4.git_branch_exists(gitdir, branch)
+
+
+def test_base_detection_needs_no_textual() -> None:
+    """Front ends other than the review TUI choose a base the same way."""
+    import subprocess
+    import sys
+
+    code = (
+        'import sys, b4.review; '
+        'b4.review.detect_apply_base; b4.review.apply_base_suggestions; '
+        "print(any(m.startswith('textual') for m in sys.modules))"
+    )
+    out = subprocess.run(
+        [sys.executable, '-c', code], capture_output=True, text=True, check=True
+    )
+    assert out.stdout.strip() == 'False'
