@@ -126,6 +126,15 @@ def _build_conflicting_patches(gitdir: str) -> Tuple[bytes, str]:
     return mbox.encode(), base
 
 
+def _scratch_worktrees(gitdir: str) -> List[str]:
+    """Shazam scratch worktrees left in the repository's common dir."""
+    common_dir = b4.git_get_common_dir(gitdir)
+    assert common_dir is not None
+    return sorted(
+        n for n in os.listdir(common_dir) if n.startswith('b4-shazam-worktree')
+    )
+
+
 class TestGitFetchAmIntoRepo:
     """Integration tests for git_fetch_am_into_repo with three-way merge."""
 
@@ -140,14 +149,11 @@ class TestGitFetchAmIntoRepo:
     def test_clean_apply(self, gitdir: str, am_flags: List[str]) -> None:
         """Patches apply cleanly, with or without -3; worktree is cleaned up."""
         ambytes, base = _build_clean_patches(gitdir)
-        common_dir = b4.git_get_common_dir(gitdir)
-        assert common_dir is not None
-        gwt = os.path.join(common_dir, 'b4-shazam-worktree')
 
         b4.git_fetch_am_into_repo(gitdir, ambytes, at_base=base, am_flags=am_flags)
 
         # Worktree should be cleaned up after success
-        assert not os.path.exists(gwt)
+        assert _scratch_worktrees(gitdir) == []
 
         # FETCH_HEAD should exist
         fh_path = os.path.join(gitdir, '.git', 'FETCH_HEAD')
@@ -193,10 +199,10 @@ class TestGitFetchAmIntoRepo:
         finally:
             # Clean up worktree
             common_dir = b4.git_get_common_dir(gitdir)
-            if common_dir:
-                gwt = os.path.join(common_dir, 'b4-shazam-worktree')
-                if os.path.exists(gwt):
-                    b4.git_run_command(gitdir, ['worktree', 'remove', '--force', gwt])
+            assert common_dir is not None
+            for name in _scratch_worktrees(gitdir):
+                gwt = os.path.join(common_dir, name)
+                b4.git_run_command(gitdir, ['worktree', 'remove', '--force', gwt])
 
     def test_check_only_with_three_way(self, gitdir: str) -> None:
         """check_only mode returns early without fetching, even with -3."""
@@ -215,10 +221,69 @@ class TestGitFetchAmIntoRepo:
         assert not os.path.exists(fh_path)
 
         # Worktree should still be cleaned up
+        assert _scratch_worktrees(gitdir) == []
+
+    def test_a_running_shazams_scratch_worktree_is_left_alone(
+        self, gitdir: str
+    ) -> None:
+        """Concurrent runs each get their own scratch worktree: one run never
+        removes another's (a review TUI and b4 shazam on the same repository)."""
         common_dir = b4.git_get_common_dir(gitdir)
         assert common_dir is not None
-        gwt = os.path.join(common_dir, 'b4-shazam-worktree')
-        assert not os.path.exists(gwt)
+        busy = os.path.join(common_dir, f'b4-shazam-worktree-{os.getpid()}-feedf00d')
+        b4.git_run_command(
+            gitdir, ['worktree', 'add', '--detach', '--no-checkout', busy]
+        )
+        try:
+            ambytes, base = _build_clean_patches(gitdir)
+            b4.git_fetch_am_into_repo(gitdir, ambytes, at_base=base, am_flags=['-3'])
+            assert os.path.isdir(busy)
+            assert _scratch_worktrees(gitdir) == [os.path.basename(busy)]
+        finally:
+            b4.git_run_command(gitdir, ['worktree', 'remove', '--force', busy])
+
+    def test_overlapping_runs_each_keep_their_worktree(
+        self, gitdir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A second run starting while the first is applying must not remove
+        the first one's scratch worktree from under it."""
+        ambytes, base = _build_clean_patches(gitdir)
+        real = b4.git_run_command
+        nested: List[bool] = []
+
+        def run(where: Optional[str], args: List[str], *a: Any, **kw: Any) -> Any:
+            if args[:1] == ['am'] and not nested:
+                nested.append(True)  # The first run is mid-apply: start another.
+                b4.git_fetch_am_into_repo(
+                    gitdir, ambytes, at_base=base, am_flags=['-3']
+                )
+            return real(where, args, *a, **kw)
+
+        monkeypatch.setattr(b4, 'git_run_command', run)
+        b4.git_fetch_am_into_repo(gitdir, ambytes, at_base=base, am_flags=['-3'])
+        assert nested
+        assert _scratch_worktrees(gitdir) == []
+
+    def test_leftovers_of_finished_runs_are_removed(self, gitdir: str) -> None:
+        """Scratch worktrees whose process is gone, and the old fixed-name one,
+        are stale: removed before the next run, as before."""
+        import subprocess
+
+        common_dir = b4.git_get_common_dir(gitdir)
+        assert common_dir is not None
+        dead_pid = subprocess.Popen(['true'])  # A process that has exited.
+        dead_pid.wait()
+        stale = [
+            os.path.join(common_dir, f'b4-shazam-worktree-{dead_pid.pid}-0badcafe'),
+            os.path.join(common_dir, 'b4-shazam-worktree'),
+        ]
+        for path in stale:
+            b4.git_run_command(
+                gitdir, ['worktree', 'add', '--detach', '--no-checkout', path]
+            )
+        ambytes, base = _build_clean_patches(gitdir)
+        b4.git_fetch_am_into_repo(gitdir, ambytes, at_base=base, am_flags=['-3'])
+        assert _scratch_worktrees(gitdir) == []
 
 
 def _build_subdir_three_way(gitdir: str) -> Tuple[bytes, str]:
@@ -943,4 +1008,4 @@ class TestSubdirCleanThreeWay:
         assert 'TEN-from-patch' in foo and 'THIRTEEN-master' in foo
 
         # Worktree torn down, nothing parked for resolution.
-        assert not os.path.exists(os.path.join(common_dir, 'b4-shazam-worktree'))
+        assert _scratch_worktrees(gitdir) == []

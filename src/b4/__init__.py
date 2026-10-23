@@ -21,6 +21,7 @@ import pathlib
 import pwd
 import random
 import re
+import secrets
 import shlex
 import shutil
 import smtplib
@@ -7571,6 +7572,35 @@ def _replay_am_on_full_worktree(
     return git_run_command(gwt, amargs, stdin=ambytes, logstderr=True, rundir=gwt)
 
 
+SHAZAM_WORKTREE = 'b4-shazam-worktree'
+
+
+def _remove_stale_shazam_worktrees(topdir: str, common_dir: str) -> None:
+    """Remove scratch worktrees left by runs that are no longer alive.
+
+    Each run names its worktree after its process id; a run that died (or the
+    single fixed-name worktree of older versions) leaves one behind. A live
+    process's worktree may be in use and is left alone.
+    """
+    pattern = re.compile(rf'{re.escape(SHAZAM_WORKTREE)}-(\d+)-[0-9a-f]+')
+    for name in os.listdir(common_dir):
+        if name != SHAZAM_WORKTREE and not name.startswith(f'{SHAZAM_WORKTREE}-'):
+            continue
+        match = pattern.fullmatch(name)
+        if match:
+            try:
+                os.kill(int(match.group(1)), 0)
+                continue  # Still running.
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                continue  # Alive, owned by someone else.
+        path = os.path.join(common_dir, name)
+        git_run_command(topdir, ['worktree', 'remove', '--force', path])
+        if os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+
+
 def git_fetch_am_into_repo(
     gitdir: Optional[str],
     ambytes: bytes,
@@ -7587,11 +7617,12 @@ def git_fetch_am_into_repo(
     common_dir = git_get_common_dir(topdir)
     if not common_dir:
         raise RuntimeError('Unable to determine git common dir')
-    gwt = os.path.join(common_dir, 'b4-shazam-worktree')
-
-    # Clean up any stale worktree from a previous run
-    if os.path.exists(gwt):
-        git_run_command(topdir, ['worktree', 'remove', '--force', gwt])
+    _remove_stale_shazam_worktrees(topdir, common_dir)
+    # One scratch worktree per run, so concurrent runs on the same repository
+    # (a review TUI and b4 shazam, say) never remove each other's.
+    gwt = os.path.join(
+        common_dir, f'{SHAZAM_WORKTREE}-{os.getpid()}-{secrets.token_hex(4)}'
+    )
 
     gitargs = ['worktree', 'add', '--detach', '--no-checkout', gwt]
     if at_base:
