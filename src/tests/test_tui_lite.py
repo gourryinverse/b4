@@ -725,3 +725,20 @@ class TestReplyFlow:
         assert type(screen).__name__ == 'FollowupReplyPreviewScreen'
         assert send.call_args.args[2] == 'Draft.\n'
         assert sent == ['MSG']
+
+    def test_preview_and_send_can_offer_save_and_report_abandon(self) -> None:
+        from b4.review_tui._reply import preview_and_send
+
+        host, lmsg, saved, abandoned = self._host(), self._lmsg(), [], []
+        preview_and_send(
+            host,
+            lmsg,
+            'Draft.\n',
+            on_save=saved.append,
+            on_abandon=lambda: abandoned.append(True),
+        )
+        screen, callback = host.push_screen.call_args.args
+        assert screen._can_save
+        callback('save')
+        callback(None)
+        assert saved == ['Draft.\n'] and abandoned == [True]

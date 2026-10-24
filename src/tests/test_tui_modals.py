@@ -1282,6 +1282,48 @@ class TestSendKeybindings:
         assert not bindings['S'].show
 
 
+class TestFollowupReplyPreviewSave:
+    """Front ends that keep drafts can offer save; abandon then means discard."""
+
+    @staticmethod
+    def _entry() -> Dict[str, Any]:
+        lmsg = mock.Mock()
+        lmsg.make_reply.return_value = email.message.EmailMessage()
+        return {'lmsg': lmsg, 'fromemail': 'reviewer@example.com'}
+
+    async def _dismissed_by(self, key: str, can_save: bool) -> Any:
+        app = ModalTestApp()
+        results: List[Any] = []
+        async with app.run_test() as pilot:
+            app.push_screen(
+                FollowupReplyPreviewScreen(self._entry(), 'Draft.\n', can_save=can_save),
+                results.append,
+            )
+            await pilot.pause()
+            await pilot.press(key)
+            await pilot.pause()
+        return results
+
+    @pytest.mark.parametrize(
+        'key, result', [('s', 'save'), ('escape', 'save'), ('t', None), ('e', 'edit')]
+    )
+    async def test_with_save_escape_saves_and_t_abandons(self, key: str, result: Any) -> None:
+        assert await self._dismissed_by(key, can_save=True) == [result]
+
+    async def test_without_save_escape_abandons_and_s_and_t_do_nothing(self) -> None:
+        assert await self._dismissed_by('escape', can_save=False) == [None]
+        assert await self._dismissed_by('s', can_save=False) == []
+        assert await self._dismissed_by('t', can_save=False) == []
+
+    async def test_the_hint_names_the_choices(self) -> None:
+        app = ModalTestApp()
+        async with app.run_test() as pilot:
+            app.push_screen(FollowupReplyPreviewScreen(self._entry(), 'x\n', can_save=True))
+            await pilot.pause()
+            hint = static_text(app.screen.query_one('#followup-preview-hint'))
+        assert 's  save' in hint and 't  abandon' in hint and 'Escape  save' in hint
+
+
 class TestFollowupReplyPreviewTrim:
     """The followup reply preview must show the body that will be sent."""
 

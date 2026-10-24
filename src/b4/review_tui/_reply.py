@@ -127,12 +127,16 @@ def preview_and_send(
     patatt_sign: bool = True,
     on_sent: Optional[Callable[[email.message.EmailMessage], None]] = None,
     on_edit: Optional[Callable[[str], None]] = None,
+    on_save: Optional[Callable[[str], None]] = None,
+    on_abandon: Optional[Callable[[], None]] = None,
 ) -> None:
     """Preview a reply already written, then send it if the user confirms.
 
     For front ends that edit the reply themselves.  *on_edit* runs with
-    the text when the user asks to edit it further; abandoning the
-    preview does nothing.
+    the text when the user asks to edit it further.  Front ends that keep
+    drafts pass *on_save*: the preview then offers save (also on Escape),
+    and abandoning runs *on_abandon* so the draft can be discarded.
+    Without them, abandoning the preview does nothing.
     """
     # The fields FollowupReplyPreviewScreen expects
     entry = {
@@ -156,5 +160,10 @@ def preview_and_send(
                 on_sent(msg)
         elif action == 'edit' and on_edit is not None:
             on_edit(reply_text)
+        elif action == 'save' and on_save is not None:
+            on_save(reply_text)
+        elif action is None and on_abandon is not None:
+            on_abandon()
 
-    app.push_screen(FollowupReplyPreviewScreen(entry, reply_text), _on_preview)
+    screen = FollowupReplyPreviewScreen(entry, reply_text, can_save=on_save is not None)
+    app.push_screen(screen, _on_preview)

@@ -578,6 +578,10 @@ class FollowupReplyPreviewScreen(ModalScreen[Optional[str]]):
       reply immediately
     - 'edit'  on E — caller should re-open the editor with the current text
     - None    on Escape — abandon (no action)
+
+    With *can_save* (front ends that keep drafts), s saves ('save'), t
+    abandons (None: the caller discards the draft; t is kept away from s)
+    and Escape saves, so that backing out never loses the text.
     """
 
     BINDINGS = [
@@ -585,7 +589,9 @@ class FollowupReplyPreviewScreen(ModalScreen[Optional[str]]):
         # Legacy alias for maintainers used to the old binding
         Binding('S', 'send', 'Send', show=False),
         Binding('e', 'edit', 'Edit'),
-        Binding('escape', 'abandon', 'Abandon'),
+        Binding('s', 'save', 'Save'),
+        Binding('t', 'discard', 'Abandon'),
+        Binding('escape', 'escape', 'Abandon'),
         Binding('q', 'abandon', 'Abandon', show=False),
     ]
 
@@ -611,10 +617,11 @@ class FollowupReplyPreviewScreen(ModalScreen[Optional[str]]):
     }
     """
 
-    def __init__(self, entry: Dict[str, Any], reply_text: str) -> None:
+    def __init__(self, entry: Dict[str, Any], reply_text: str, can_save: bool = False) -> None:
         super().__init__()
         self._entry = entry
         self._reply_text = reply_text
+        self._can_save = can_save
 
     def compose(self) -> ComposeResult:
         with Vertical(id='followup-preview-dialog'):
@@ -625,10 +632,10 @@ class FollowupReplyPreviewScreen(ModalScreen[Optional[str]]):
                 markup=False,
                 auto_scroll=False,
             )
-            yield Static(
-                'Ctrl-y  send  |  e  edit  |  Escape  abandon',
-                id='followup-preview-hint',
-            )
+            hint = 'Ctrl-y  send  |  e  edit  |  Escape  abandon'
+            if self._can_save:
+                hint = 'Ctrl-y  send  |  e  edit  |  s  save  |  t  abandon  |  Escape  save'
+            yield Static(hint, id='followup-preview-hint')
 
     def on_mount(self) -> None:
         body = prepare_followup_reply_body(self._reply_text)
@@ -644,6 +651,20 @@ class FollowupReplyPreviewScreen(ModalScreen[Optional[str]]):
 
     def action_abandon(self) -> None:
         self.dismiss(None)
+
+    def action_save(self) -> None:
+        self.dismiss('save')
+
+    def action_discard(self) -> None:
+        self.dismiss(None)
+
+    def action_escape(self) -> None:
+        self.dismiss('save' if self._can_save else None)
+
+    def check_action(self, action: str, parameters: Tuple[object, ...]) -> Optional[bool]:
+        if action in ('save', 'discard'):
+            return self._can_save
+        return True
 
 
 class SendScreen(ModalScreen[bool]):
