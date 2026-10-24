@@ -5960,7 +5960,14 @@ def git_get_toplevel(path: Optional[str] = None) -> Optional[str]:
     topdir = None
     # Are we in a git tree and if so, what is our toplevel?
     gitargs = ['rev-parse', '--show-toplevel']
-    lines = git_get_command_lines(path, gitargs)
+    # git_run_command() names a work tree's repository with --git-dir, and
+    # git then takes the cwd as the work tree: run in the work tree itself,
+    # or the answer is wherever the process happens to be.
+    rundir = None
+    if path and os.path.exists(os.path.join(path, '.git')):
+        rundir = str(path)
+    _ecode, out = git_run_command(path, gitargs, rundir=rundir)
+    lines = [line for line in out.split('\n') if line]
     if len(lines) == 1:
         topdir = lines[0]
     return topdir

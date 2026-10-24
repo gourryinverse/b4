@@ -239,3 +239,41 @@ class TestMakeFakeAmRangeBadChars:
         assert end, 'make_fake_am_range produced no end commit'
         assert b4.git_commit_exists(gitdir, start)
         assert b4.git_commit_exists(gitdir, end)
+
+
+class TestRepositoryOutsideCwd:
+    """Helpers given a repository path must address it, wherever the process
+    cwd is: a front end applying into one checkout may sit in another.
+
+    With ``--git-dir`` alone git takes the cwd as the work tree, so
+    ``git_get_toplevel()`` used to return the cwd, and
+    ``git_fetch_am_into_repo()`` created its scratch worktree in whatever
+    repository the process happened to be in.
+    """
+
+    def test_toplevel_is_the_given_repository(
+        self, gitdir: str, tmp_path: pathlib.Path
+    ) -> None:
+        elsewhere = tmp_path / 'elsewhere'
+        elsewhere.mkdir()
+        os.chdir(elsewhere)
+        assert b4.git_get_toplevel(gitdir) == gitdir
+
+    def test_fetch_am_applies_into_the_given_repository(
+        self, gitdir: str, tmp_path: pathlib.Path
+    ) -> None:
+        lser, base = _build_one_patch_series(gitdir)
+        ambytes = b4.LoreMessage.get_msg_as_bytes(lser.patches[1].get_am_message())
+        other = tmp_path / 'other'
+        b4.git_run_command(None, ['init', '-q', str(other)])
+        os.chdir(other)
+
+        b4.git_fetch_am_into_repo(gitdir, ambytes, at_base=base)
+
+        _ecode, subject = b4.git_run_command(
+            gitdir, ['log', '-1', '--format=%s', 'FETCH_HEAD']
+        )
+        assert subject.strip() == 'cwd-safety: tweak file1'
+        assert not (other / '.git' / 'FETCH_HEAD').exists()
+        _ecode, worktrees = b4.git_run_command(str(other), ['worktree', 'list'])
+        assert len(worktrees.splitlines()) == 1
